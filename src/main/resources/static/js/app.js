@@ -1,7 +1,11 @@
 let archivoSeleccionado = null;
+let graficaHistogramaUrl = null;
+let graficaBarrasUrl = null;
 
 document.getElementById('fileInput').addEventListener('change', function(e) {
     archivoSeleccionado = e.target.files[0];
+    graficaHistogramaUrl = null;
+    graficaBarrasUrl = null;
 
     if (archivoSeleccionado) {
         const fileInfo = document.getElementById('fileInfo');
@@ -9,6 +13,9 @@ document.getElementById('fileInput').addEventListener('change', function(e) {
 
         fileName.textContent = archivoSeleccionado.name;
         fileInfo.classList.remove('hidden');
+
+        // Ocultar resultados anteriores
+        document.getElementById('resultados').classList.add('hidden');
     }
 });
 
@@ -38,8 +45,11 @@ async function analizarDatos() {
         const data = await response.json();
         mostrarResultados(data);
 
-        // Cargar gráfica
-        await cargarGrafica();
+        // Cargar ambas gráficas
+        await Promise.all([
+            cargarGrafica('histograma'),
+            cargarGrafica('barras')
+        ]);
 
     } catch (err) {
         mostrarError(err.message);
@@ -48,22 +58,38 @@ async function analizarDatos() {
     }
 }
 
-async function cargarGrafica() {
+async function cargarGrafica(tipo) {
     const formData = new FormData();
     formData.append('archivo', archivoSeleccionado);
 
-    const response = await fetch('/api/estadistica/grafica', {
-        method: 'POST',
-        body: formData
-    });
+    const endpoint = tipo === 'histograma'
+        ? '/api/estadistica/grafica/histograma'
+        : '/api/estadistica/grafica/barras';
 
-    if (response.ok) {
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        document.getElementById('grafica').src = url;
+    try {
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+
+            if (tipo === 'histograma') {
+                document.getElementById('graficaHistograma').src = url;
+                graficaHistogramaUrl = url;
+            } else {
+                document.getElementById('graficaBarras').src = url;
+                graficaBarrasUrl = url;
+            }
+        } else {
+            console.error(`Error cargando gráfica ${tipo}:`, response.status);
+        }
+    } catch (error) {
+        console.error(`Error cargando gráfica ${tipo}:`, error);
     }
 }
-
 function mostrarResultados(data) {
     const content = document.getElementById('resultadosContent');
 
@@ -108,9 +134,16 @@ function mostrarError(mensaje) {
     error.classList.remove('hidden');
 }
 
-function descargarGrafica() {
-    const link = document.createElement('a');
-    link.href = document.getElementById('grafica').src;
-    link.download = 'grafica_estadistica.png';
-    link.click();
+function descargarGrafica(tipo) {
+    const url = tipo === 'histograma' ? graficaHistogramaUrl : graficaBarrasUrl;
+    const nombre = tipo === 'histograma' ? 'histograma_estadistica.png' : 'barras_chebyshev.png';
+
+    if (url) {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = nombre;
+        link.click();
+    } else {
+        alert('La gráfica no está disponible para descargar');
+    }
 }

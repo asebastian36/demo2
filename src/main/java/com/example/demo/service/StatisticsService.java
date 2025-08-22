@@ -3,11 +3,14 @@ package com.example.demo.service;
 import com.example.demo.model.*;
 import com.example.demo.util.StatisticsUtil;
 import org.jfree.chart.*;
+import org.jfree.chart.axis.CategoryAxis;
+import org.jfree.chart.axis.CategoryLabelPositions;
 import org.jfree.chart.plot.*;
+import org.jfree.chart.renderer.category.BarRenderer;
 import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
+import org.jfree.data.category.DefaultCategoryDataset;
 import org.jfree.data.xy.*;
 import org.springframework.stereotype.Service;
-
 import java.awt.*;
 import java.io.ByteArrayOutputStream;
 import java.util.List;
@@ -28,23 +31,40 @@ public class StatisticsService {
         return resultado;
     }
 
-    public byte[] generarGrafica(List<Double> datos, AnalysisResult resultado) {
+    public byte[] generarGraficaHistograma(List<Double> datos, AnalysisResult resultado) {
         try {
             // Normalizar datos
             List<Double> datosNormalizados = StatisticsUtil.normalizarDatos(
                     datos, resultado.getMedia(), resultado.getDesviacionEstandar());
 
-            // Crear gráfica
-            JFreeChart chart = crearChart(datosNormalizados, resultado);
+            // Crear gráfica de histograma
+            JFreeChart chart = crearChartHistograma(datosNormalizados, resultado);
 
             // Convertir a bytes
-            ByteArrayOutputStream stream = new ByteArrayOutputStream();
-            ChartUtils.writeChartAsPNG(stream, chart, 800, 600);
-            return stream.toByteArray();
+            return convertirChartABytes(chart);
 
         } catch (Exception e) {
-            throw new RuntimeException("Error generando gráfica", e);
+            throw new RuntimeException("Error generando gráfica de histograma", e);
         }
+    }
+
+    public byte[] generarGraficaBarras(List<Double> datos, AnalysisResult resultado) {
+        try {
+            // Crear gráfica de barras
+            JFreeChart chart = crearChartBarras(datos, resultado);
+
+            // Convertir a bytes
+            return convertirChartABytes(chart);
+
+        } catch (Exception e) {
+            throw new RuntimeException("Error generando gráfica de barras", e);
+        }
+    }
+
+    private byte[] convertirChartABytes(JFreeChart chart) throws Exception {
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        ChartUtils.writeChartAsPNG(stream, chart, 800, 600);
+        return stream.toByteArray();
     }
 
     private List<ResultChebyshev> calcularChebyshev(List<Double> datos,
@@ -81,7 +101,7 @@ public class StatisticsService {
         return resultado;
     }
 
-    private JFreeChart crearChart(List<Double> datosNormalizados, AnalysisResult resultado) {
+    private JFreeChart crearChartHistograma(List<Double> datosNormalizados, AnalysisResult resultado) {
         // Crear dataset para histograma
         XYSeries histogramSeries = new XYSeries("Histograma");
 
@@ -129,11 +149,61 @@ public class StatisticsService {
         );
 
         // Personalizar chart
-        personalizarChart(chart);
+        personalizarChartHistograma(chart);
 
         return chart;
     }
 
+    private JFreeChart crearChartBarras(List<Double> datos, AnalysisResult resultado) {
+        // Normalizar datos para consistencia con el histograma
+        List<Double> datosNormalizados = StatisticsUtil.normalizarDatos(
+                datos, resultado.getMedia(), resultado.getDesviacionEstandar());
+
+        // Crear dataset para gráfica de barras del histograma
+        DefaultCategoryDataset dataset = new DefaultCategoryDataset();
+
+        // Calcular histograma con los mismos parámetros que el gráfico principal
+        int bins = 16;
+        double[] limites = StatisticsUtil.calcularLimitesHistograma(datosNormalizados);
+        double min = limites[0];
+        double max = limites[1];
+        double binWidth = (max - min) / bins;
+
+        int[] frequencies = new int[bins];
+        for (double dato : datosNormalizados) {
+            if (dato >= min && dato <= max) {
+                int binIndex = (int) ((dato - min) / binWidth);
+                if (binIndex >= bins) binIndex = bins - 1;
+                if (binIndex < 0) binIndex = 0;
+                frequencies[binIndex]++;
+            }
+        }
+
+        // Agregar datos al dataset
+        for (int i = 0; i < bins; i++) {
+            double inicioIntervalo = min + i * binWidth;
+            double finIntervalo = min + (i + 1) * binWidth;
+            String intervalo = String.format("[%.2f, %.2f]", inicioIntervalo, finIntervalo);
+            dataset.addValue(frequencies[i], "Frecuencia", intervalo);
+        }
+
+        // Crear chart de barras
+        JFreeChart chart = ChartFactory.createBarChart(
+                "Distribución de Frecuencias - Histograma de Barras",
+                "Intervalos (desviaciones estándar desde la media)",
+                "Frecuencia",
+                dataset,
+                PlotOrientation.VERTICAL,
+                true,
+                true,
+                false
+        );
+
+        // Personalizar chart
+        personalizarChartBarras(chart);
+
+        return chart;
+    }
     private XYSeries calcularCurvaKDE(List<Double> datos) {
         XYSeries series = new XYSeries("Curva KDE");
 
@@ -176,7 +246,7 @@ public class StatisticsService {
         return 1.06 * desviacion * Math.pow(datos.size(), -0.2);
     }
 
-    private void personalizarChart(JFreeChart chart) {
+    private void personalizarChartHistograma(JFreeChart chart) {
         XYPlot plot = chart.getXYPlot();
 
         // Configurar renderer
@@ -210,5 +280,25 @@ public class StatisticsService {
 
         // Mejorar la visualización del histograma
         plot.getRangeAxis().setLowerBound(0); // Empezar desde 0 en el eje Y
+    }
+
+    private void personalizarChartBarras(JFreeChart chart) {
+        CategoryPlot plot = chart.getCategoryPlot();
+
+        // Configurar colores
+        BarRenderer renderer = (BarRenderer) plot.getRenderer();
+        renderer.setSeriesPaint(0, new Color(65, 105, 225)); // Azul para las barras
+        renderer.setShadowVisible(false);
+
+        // Configurar fondo
+        plot.setBackgroundPaint(Color.WHITE);
+        plot.setRangeGridlinePaint(new Color(192, 192, 192, 100));
+
+        // Rotar etiquetas del eje X para mejor visualización
+        CategoryAxis domainAxis = plot.getDomainAxis();
+        domainAxis.setCategoryLabelPositions(CategoryLabelPositions.UP_45);
+
+        // Mejorar visualización
+        plot.getRangeAxis().setLowerBound(0);
     }
 }

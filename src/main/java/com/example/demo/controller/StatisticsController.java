@@ -1,6 +1,7 @@
 package com.example.demo.controller;
 
 import com.example.demo.model.AnalysisResult;
+import com.example.demo.model.GraphicsResponse;
 import com.example.demo.service.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -38,25 +39,68 @@ public class StatisticsController {
         }
     }
 
-    @PostMapping(value = "/grafica", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<byte[]> obtenerGrafica(
+    @PostMapping(value = "/grafica/histograma", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<byte[]> obtenerGraficaHistograma(
             @RequestParam("archivo") MultipartFile archivo) {
 
         try {
             var datos = fileProcessorService.procesarArchivo(archivo);
             AnalysisResult resultado = estadisticaService.analizarDatos(datos);
-            byte[] graficaBytes = estadisticaService.generarGrafica(datos, resultado);
+            byte[] graficaBytes = estadisticaService.generarGraficaHistograma(datos, resultado);
 
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.IMAGE_PNG);
-            headers.setContentDispositionFormData("attachment", "grafica.png");
-
-            return ResponseEntity.ok()
-                    .headers(headers)
-                    .body(graficaBytes);
+            return crearRespuestaImagen(graficaBytes, "histograma.png");
 
         } catch (Exception e) {
-            throw new RuntimeException("Error generando gráfica: " + e.getMessage(), e);
+            throw new RuntimeException("Error generando gráfica de histograma: " + e.getMessage(), e);
         }
+    }
+
+    @PostMapping(value = "/grafica/barras", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<byte[]> obtenerGraficaBarras(
+            @RequestParam("archivo") MultipartFile archivo) {
+
+        try {
+            var datos = fileProcessorService.procesarArchivo(archivo);
+            AnalysisResult resultado = estadisticaService.analizarDatos(datos);
+            byte[] graficaBytes = estadisticaService.generarGraficaBarras(datos, resultado);
+
+            return crearRespuestaImagen(graficaBytes, "barras_chebyshev.png");
+
+        } catch (Exception e) {
+            throw new RuntimeException("Error generando gráfica de barras: " + e.getMessage(), e);
+        }
+    }
+
+    @PostMapping(value = "/graficas", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<GraphicsResponse> obtenerTodasLasGraficas(
+            @RequestParam("archivo") MultipartFile archivo) {
+
+        try {
+            var datos = fileProcessorService.procesarArchivo(archivo);
+            AnalysisResult resultado = estadisticaService.analizarDatos(datos);
+
+            byte[] histogramaBytes = estadisticaService.generarGraficaHistograma(datos, resultado);
+            byte[] barrasBytes = estadisticaService.generarGraficaBarras(datos, resultado);
+
+            GraphicsResponse response = new GraphicsResponse();
+            response.setHistograma(histogramaBytes);
+            response.setBarras(barrasBytes);
+            response.setResultado(resultado);
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            throw new RuntimeException("Error generando gráficas: " + e.getMessage(), e);
+        }
+    }
+
+    private ResponseEntity<byte[]> crearRespuestaImagen(byte[] imagenBytes, String nombreArchivo) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.IMAGE_PNG);
+        headers.setContentDispositionFormData("attachment", nombreArchivo);
+
+        return ResponseEntity.ok()
+                .headers(headers)
+                .body(imagenBytes);
     }
 }
